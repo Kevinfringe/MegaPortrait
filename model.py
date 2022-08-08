@@ -82,6 +82,7 @@ class ResBlock(nn.Module):
         return output
 
 
+
 class Eapp1(nn.Module):
     '''
         This is the first part of the Appearance Encoder. To generate
@@ -130,11 +131,60 @@ class Eapp1(nn.Module):
 
 
 class Eapp2(nn.Module):
-'''
-    This is the second part of the Appearance Encoder. To generate
-    a global descriptor es that helps retain the appearance of the output
-    image.
-'''
+    '''
+        This is the second part of the Appearance Encoder. To generate
+        a global descriptor es that helps retain the appearance of the output
+        image.
+        This encoder uses ResNet-50 as backbone, and replace the residual block with the customized res-block.
+        ref: https://towardsdev.com/implement-resnet-with-pytorch-a9fb40a77448
+    '''
+    def __init__(self, in_channels, resblock, repeat, useBottleneck=False, outputs=1000):
+        super().__init__()
+        self.layer0 = nn.Sequential(
+            nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU()
+        )
+
+        filters = [64, 256, 512, 1024, 2048]
+
+        self.layer1 = nn.Sequential()
+        self.layer1.add_module('conv2_1', ResBlock(dimension=2, input_channels=filters[0], output_channels=filters[1]))
+        for i in range(1, repeat[0]):
+                self.layer1.add_module('conv2_%d'%(i+1,), ResBlock(dimension=2, input_channels=filters[1], output_channels=filters[1]))
+
+        self.layer2 = nn.Sequential()
+        self.layer2.add_module('conv3_1', ResBlock(dimension=2, input_channels=filters[1], output_channels=filters[2]))
+        for i in range(1, repeat[1]):
+                self.layer2.add_module('conv3_%d' % (i+1,), ResBlock(dimension=2, input_channels=filters[2], output_channels=filters[2]))
+
+        self.layer3 = nn.Sequential()
+        self.layer3.add_module('conv4_1', ResBlock(dimension=2, input_channels=filters[2], output_channels=filters[3]))
+        for i in range(1, repeat[2]):
+            self.layer3.add_module('conv2_%d' % (i+1,), ResBlock(dimension=2, input_channels=filters[3], output_channels=filters[3]))
+
+        self.layer4 = nn.Sequential()
+        self.layer4.add_module('conv5_1', ResBlock(dimension=2, input_channels=filters[3], output_channels=filters[4]))
+        for i in range(1, repeat[3]):
+            self.layer4.add_module('conv3_%d'%(i+1,), ResBlock(dimension=2, input_channels=filters[4], output_channels=filters[4]))
+
+        self.gap = torch.nn.AdaptiveAvgPool2d(1)
+        self.fc = torch.nn.Linear(filters[4], outputs)
+
+
+    def forward(self, input):
+        input = self.layer0(input)
+        input = self.layer1(input)
+        input = self.layer2(input)
+        input = self.layer3(input)
+        input = self.layer4(input)
+        input = self.gap(input)
+        input = torch.flatten(input, start_dim=1)
+        input = self.fc(input)
+
+        return input
+
 
 
 class Emtn(nn.Module):
