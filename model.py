@@ -41,11 +41,8 @@ class Conv3D_WS(nn.Conv3d):
                         self.padding, self.dilation, self.groups)
 
 
-class ResBlock_Custom(nn.Module):
-    def __init__(self):
-        super().__init__()
 
-class ResBlock(nn.Module):
+class ResBlock_Custom(nn.Module):
     def __init__(self, dimension, input_channels, output_channels):
         super().__init__()
         self.dimension = dimension
@@ -91,11 +88,11 @@ class Eapp1(nn.Module):
     def __init__(self):
         # first conv layer, output size: 512 * 512 * 64
         self.conv = nn.Conv2d(3, 64, 7, stride=1, padding=3)
-        self.resblock_128 = ResBlock(dimension=2, input_channels=64, output_channels= 128)
-        self.resblock_256 = ResBlock(dimension=2, input_channels=128, output_channels= 256)
-        self.resblock_512 = ResBlock(dimension=2, input_channels=256, output_channels= 512)
-        self.resblock3D_96 = ResBlock(dimension=3, input_channels= 1536, output_channels= 96)
-        self.resblock3D_96_2 = ResBlock(dimension=3, input_channels=96, output_channels=96)
+        self.resblock_128 = ResBlock_Custom(dimension=2, input_channels=64, output_channels= 128)
+        self.resblock_256 = ResBlock_Custom(dimension=2, input_channels=128, output_channels= 256)
+        self.resblock_512 = ResBlock_Custom(dimension=2, input_channels=256, output_channels= 512)
+        self.resblock3D_96 = ResBlock_Custom(dimension=3, input_channels= 1536, output_channels= 96)
+        self.resblock3D_96_2 = ResBlock_Custom(dimension=3, input_channels=96, output_channels=96)
         self.conv_1 = nn.Conv2d(in_channels=512, out_channels=1536, kernel_size=1, stride=1, padding=0)
 
         self.avgpool = nn.AvgPool2d(kernel_size=5, stride=1, padding=2)
@@ -138,7 +135,7 @@ class Eapp2(nn.Module):
         This encoder uses ResNet-50 as backbone, and replace the residual block with the customized res-block.
         ref: https://towardsdev.com/implement-resnet-with-pytorch-a9fb40a77448
     '''
-    def __init__(self, in_channels, resblock, repeat, useBottleneck=False, outputs=1000):
+    def __init__(self, in_channels, resblock, repeat, outputs=1000):
         super().__init__()
         self.layer0 = nn.Sequential(
             nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3),
@@ -187,18 +184,189 @@ class Eapp2(nn.Module):
 
 
 
-class Emtn(nn.Module):
+class ResBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, downsample):
+        super().__init__()
+        if downsample:
+            self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2, padding=1)
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=2),
+                nn.BatchNorm2d(out_channels)
+            )
+        else:
+            self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
+            self.shortcut = nn.Sequential()
+
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+
+    def forward(self, input):
+        shortcut = self.shortcut(input)
+        input = nn.ReLU()(self.bn1(self.conv1(input)))
+        input = nn.ReLU()(self.bn2(self.conv2(input)))
+        input = input + shortcut
+        return nn.ReLU()(input)
 
 
+
+class Emtn_facial(nn.Module):
+    def __init__(self, in_channels, resblock, outputs=1000):
+        super().__init__()
+        self.layer0 = nn.Sequential(
+            nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU()
+        )
+
+        self.layer1 = nn.Sequential(
+            resblock(64, 64, downsample=False),
+            resblock(64, 64, downsample=False)
+        )
+
+        self.layer2 = nn.Sequential(
+            resblock(64, 128, downsample=True),
+            resblock(128, 128, downsample=False)
+        )
+
+        self.layer3 = nn.Sequential(
+            resblock(128, 256, downsample=True),
+            resblock(256, 256, downsample=False)
+        )
+
+        self.layer4 = nn.Sequential(
+            resblock(256, 512, downsample=True),
+            resblock(512, 512, downsample=False)
+        )
+
+        self.gap = torch.nn.AdaptiveAvgPool2d(1)
+        self.fc = torch.nn.Linear(512, outputs)
+
+    def forward(self, input):
+        input = self.layer0(input)
+        input = self.layer1(input)
+        input = self.layer2(input)
+        input = self.layer3(input)
+        input = self.layer4(input)
+        input = self.gap(input)
+        input = torch.flatten(input)
+        input = self.fc(input)
+
+        return input
+
+
+
+class Emtn_head(nn.Module):
+    def __init__(self, in_channels, resblock, outputs=1000):
+        super().__init__()
+        self.layer0 = nn.Sequential(
+            nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU()
+        )
+
+        self.layer1 = nn.Sequential(
+            resblock(64, 64, downsample=False),
+            resblock(64, 64, downsample=False)
+        )
+
+        self.layer2 = nn.Sequential(
+            resblock(64, 128, downsample=True),
+            resblock(128, 128, downsample=False)
+        )
+
+        self.layer3 = nn.Sequential(
+            resblock(128, 256, downsample=True),
+            resblock(256, 256, downsample=False)
+        )
+
+        self.layer4 = nn.Sequential(
+            resblock(256, 512, downsample=True),
+            resblock(512, 512, downsample=False)
+        )
+
+        self.gap = torch.nn.AdaptiveAvgPool2d(1)
+        self.fc = torch.nn.Linear(512, outputs)
+
+    def forward(self, input):
+        input = self.layer0(input)
+        input = self.layer1(input)
+        input = self.layer2(input)
+        input = self.layer3(input)
+        input = self.layer4(input)
+        input = self.gap(input)
+        input = torch.flatten(input)
+        input = self.fc(input)
+
+        return input
+
+
+
+## Need to learn more about the adaptive group norm.
+class ResBlock3D_Adaptive(nn.Module):
+    def __init__(self, input_channels, output_channels):
+        super().__init__()
+        self.input_channels = input_channels
+        self.output_channels = output_channels
+        self.conv_res = nn.Conv3d(self.input_channels, self.output_channels, 3, padding=1)
+        self.conv_ws = Conv3D_WS(in_channels=self.input_channels,
+                                 out_channels=self.output_channels,
+                                 kernel_size=3,
+                                 padding=1)
+        self.conv = nn.Conv3d(self.output_channels, self.output_channels, 3, padding=1)
+
+
+    def forward(self, x):
+        out2 = self.conv_res(x)
+
+        out1 = F.group_norm(x, num_groups=32)
+        out1 = F.relu(out1)
+        out1 = self.conv_ws(out1)
+        out1 = F.group_norm(out1, num_groups=32)
+        out1 = F.relu(out1)
+        out1 = self.conv(out1)
+
+        output = out1 + out2
+
+        return output
 
 
 class WarpGenerator(nn.Module):
+    def __init__(self, input_channels):
+        super(WarpGenerator, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels=input_channels, out_channels=2048, kernel_size=1, padding=0, stride=1)
+        self.hidden_layer = nn.Sequential(
+            ResBlock_Custom(dimension=3, input_channels=2048, output_channels=256),
+            nn.Upsample(scale_factor=(2, 2, 2)),
+            ResBlock_Custom(dimension=3, input_channels=256, output_channels=128),
+            nn.Upsample(scale_factor=(2, 2, 2)),
+            ResBlock_Custom(dimension=3, input_channels=128, output_channels=64),
+            nn.Upsample(scale_factor=(1, 2, 2)),
+            ResBlock_Custom(dimension=3, input_channels=64, output_channels=32),
+            nn.Upsample(scale_factor=(1, 2, 2)),
+        )
+        self.conv3D = nn.Conv3d(in_channels=32, out_channels=3, kernel_size=3, padding=1,stride=1)
 
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.hidden_layer(out)
+        out = F.group_norm(out, num_groups=32)
+        out = F.relu(out)
+        out = F.tanh(torch.flatten(out))
+
+        return out
 
 
 
 class G3d(nn.Module):
+    def __init__(self, input_channels):
+        super(G3d, self).__init__()
+        self.input_channels = input_channels
 
+    def forward(self, x):
+        out =
 
 
 
