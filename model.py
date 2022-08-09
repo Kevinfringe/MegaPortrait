@@ -366,9 +366,68 @@ class G3d(nn.Module):
         self.input_channels = input_channels
 
     def forward(self, x):
-        out =
+        out = ResBlock_Custom(dimension=3, input_channels=self.input_channels, output_channels=192)(x)
+        out = nn.Upsample(scale_factor=(1/2, 2, 2))(out)
+        short_cut1 = ResBlock_Custom(dimension=3, input_channels=192, output_channels=196)(out)
+        out = ResBlock_Custom(dimension=3, input_channels=192, output_channels=384)(out)
+        out = nn.Upsample(scale_factor=(2, 2, 2))(out)
+        short_cut2 = ResBlock_Custom(dimension=3, input_channels=384, output_channels=384)(out)
+        out = ResBlock_Custom(dimension=3, input_channels=384, output_channels=512)(out)
+        short_cut3 = out
+        out = ResBlock_Custom(dimension=3, input_channels=512, output_channels=512)(out)
+        out = short_cut3 + out
+        out = ResBlock_Custom(dimension=3, input_channels=512, output_channels=384)(out)
+        out = nn.Upsample(scale_factor=(2, 2, 2))(out)
+        out = out + short_cut2
+        out = ResBlock_Custom(dimension=3, input_channels=384, output_channels=196)(out)
+        out = nn.Upsample(scale_factor=(1/2, 2, 2))(out)
+        out = out + short_cut1
+        out = ResBlock_Custom(dimension=3, input_channels=196, output_channels=96)(out)
+
+        # Last Layer.
+        out = F.group_norm(out, num_groups=32)
+        out = F.relu(out)
+        out = nn.Conv3d(in_channels=96, out_channels=96, kernel_size=3, padding=1, stride=1)(out)
+
+        return out
+
 
 
 
 class G2d(nn.Module):
+    def __init__(self, input_channels):
+        super(G3d, self).__init__()
+        self.input_channels = input_channels
+        self.conv1 = nn.Conv2d(in_channels=self.input_channels, out_channels=512, kernel_size=1, padding=0, stride=1)
+        self.repeat_resblock = nn.Sequential(
+            ResBlock_Custom(dimension=2, input_channels=512, output_channels=512)
+        )
+
+        for i in range(1, 8):
+            self.repeat_resblock.add_module(module=ResBlock_Custom(dimension=2, input_channels=512, output_channels=512))
+
+        self.upsamples = nn.Sequential(
+            nn.Upsample(scale_factor=(2, 2)),
+            ResBlock_Custom(dimension=2, input_channels=512, output_channels=256),
+            nn.Upsample(scale_factor=(2, 2)),
+            ResBlock_Custom(dimension=2, input_channels=256, output_channels=128),
+            nn.Upsample(scale_factor=(2, 2)),
+            ResBlock_Custom(dimension=2, input_channels=128, output_channels=64),
+        )
+
+        self.last_layer = nn.Sequential(
+            nn.Conv2d(in_channels=64, out_channels=3, kernel_size=3, padding=1, stride=1)
+        )
+
+    def forward(self, x):
+        ##TODO: Placeholder for reshaping.
+        out = self.conv1(x)
+        out = self.repeat_resblock(out)
+        out = self.upsamples(out)
+        out = F.group_norm(out, num_groups=32)
+        out = F.relu(out)
+        out = self.last_layer(out)
+        out = F.sigmoid(out)
+
+        return out
 
