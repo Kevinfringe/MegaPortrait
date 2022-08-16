@@ -1,5 +1,6 @@
 import cv2 as cv
 import numpy as np
+from mtcnn.mtcnn import MTCNN
 import os
 
 
@@ -9,6 +10,18 @@ source_imgs_path = "./source_img"
 driver_imgs_path = "./driver_img"
 
 print("current work dir" + os.getcwd())
+
+def face_detect(img):
+
+    detector = MTCNN()
+    # Detect faces
+    faces = detector.detect_faces(img)
+    print("The output of faces is ")
+    print(faces)
+
+    return faces
+
+
 
 
 def capture_frames(path, flag, n=512):
@@ -29,7 +42,6 @@ def capture_frames(path, flag, n=512):
 
     # ref: https://docs.opencv.org/4.x/dd/d43/tutorial_py_video_display.html
     while cap.isOpened():
-        print("Entered while loop.")
         ret, frame = cap.read()
         if not ret:
             print("Can't receive frame (stream end?). Exiting ...")
@@ -40,6 +52,12 @@ def capture_frames(path, flag, n=512):
         else:
             filename = "G"
 
+            # face detect part
+            # face = face_detect(frame)
+            # x, y, w, h = face[0]['box']
+            # print(frame.shape)
+            # frame = frame[x:x+w, y:y+h, :]
+
 
         img = cv.resize(frame, (n, n))
         cwd = os.getcwd()
@@ -48,7 +66,6 @@ def capture_frames(path, flag, n=512):
         else:
             os.chdir(driver_imgs_path)
         filename = filename + str(counter) + ".jpg"
-        print("Image shape is: " + str(img.shape))
         cv.imwrite(filename=filename, img=img)
         os.chdir(cwd)
 
@@ -57,5 +74,5 @@ def capture_frames(path, flag, n=512):
     cap.release()
 
 
-capture_frames(acted_anger_source_path, flag=1)
+#capture_frames(acted_anger_source_path, flag=1)
 capture_frames(genuine_anger_driver_path, flag=0)

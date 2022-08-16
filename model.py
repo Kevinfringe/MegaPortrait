@@ -1,9 +1,8 @@
-import numpy as np
+import gc
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import torch
 
 
 class Conv2d_WS(nn.Conv2d):
@@ -87,11 +86,12 @@ class Eapp1(nn.Module):
     '''
     def __init__(self):
         # first conv layer, output size: 512 * 512 * 64
-        self.conv = nn.Conv2d(3, 64, 7, stride=1, padding=3)
-        self.resblock_128 = ResBlock_Custom(dimension=2, input_channels=64, output_channels= 128)
-        self.resblock_256 = ResBlock_Custom(dimension=2, input_channels=128, output_channels= 256)
-        self.resblock_512 = ResBlock_Custom(dimension=2, input_channels=256, output_channels= 512)
-        self.resblock3D_96 = ResBlock_Custom(dimension=3, input_channels= 1536, output_channels= 96)
+        super().__init__()
+        self.conv = nn.Conv2d(3, 64, 7, stride=1, padding=3)                                            # output 512*512*64
+        self.resblock_128 = ResBlock_Custom(dimension=2, input_channels=64, output_channels=128)        # output 512*512*128
+        self.resblock_256 = ResBlock_Custom(dimension=2, input_channels=128, output_channels=256)       # output 512*512*256
+        self.resblock_512 = ResBlock_Custom(dimension=2, input_channels=256, output_channels=512)       # output 512*512*512
+        self.resblock3D_96 = ResBlock_Custom(dimension=3, input_channels=96, output_channels=96)      # output
         self.resblock3D_96_2 = ResBlock_Custom(dimension=3, input_channels=96, output_channels=96)
         self.conv_1 = nn.Conv2d(in_channels=512, out_channels=1536, kernel_size=1, stride=1, padding=0)
 
@@ -100,22 +100,35 @@ class Eapp1(nn.Module):
 
     def forward(self, x):
         out = self.conv(x)
+        print("After first layer:" + str(out.size()))
         out = self.resblock_128(out)
+        print("After resblock_128:" + str(out.size()))
         out = self.avgpool(out)
+        print("After avgpool:" + str(out.size()))
         out = self.resblock_256(out)
+        print("After resblock_256:" + str(out.size()))
         out = self.avgpool(out)
+        print("After avgpool:" + str(out.size()))
         out = self.resblock_512(out)
+        print("After resblock_512:" + str(out.size()))
         out = self.avgpool(out)
+        print("After avgpool:" + str(out.size()))
 
         out = F.group_norm(out, num_groups=32)
+        print("After group_norm:" + str(out.size()))
         out = F.relu(out)
+        print("After relu:" + str(out.size()))
+
         out = self.conv_1(out)
+        print("After conv_1:" + str(out.size()))
 
         # Reshape
-        out = out.view(96, 16, -1, -1)
+        out = out.view(96, 16, out.size(1), out.size(2))
+        print("After reshape:" + str(out.size()))
 
         # ResBlock 3D
         out = self.resblock3D_96(out)
+        print("After resblock3D:" + str(out.size()))
         out = self.resblock3D_96_2(out)
         out = self.resblock3D_96_2(out)
         out = self.resblock3D_96_2(out)
@@ -135,7 +148,7 @@ class Eapp2(nn.Module):
         This encoder uses ResNet-50 as backbone, and replace the residual block with the customized res-block.
         ref: https://towardsdev.com/implement-resnet-with-pytorch-a9fb40a77448
     '''
-    def __init__(self, in_channels, resblock, repeat, outputs=1000):
+    def __init__(self, in_channels, repeat, outputs=1000):
         super().__init__()
         self.layer0 = nn.Sequential(
             nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3),
