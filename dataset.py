@@ -6,20 +6,23 @@ source_img_path = './source_img'
 driver_img_path = './driver_img'
 
 class SourceDataset(Dataset):
-    def __init__(self, source_img_path, length,transform=None):
+    def __init__(self, source_img_path, length, transform=None):
         self.source_img_path = source_img_path
         self.length = length
         self.transform = transform
 
+    def __len__(self):
+        return self.length
+
     def __getitem__(self, item):
-        img_path = self.source_img_path + "A" + str(item) + ".jpg"
+        img_path = self.source_img_path + "/A" + str(item + 1) + ".jpg"
         img = cv.imread(img_path)
         img = np.array(img)
 
         if self.transform:
             img = self.transform(img)
 
-        return img
+        return img.astype(np.float16)
 
 
 class DriverDataset(Dataset):
@@ -28,12 +31,15 @@ class DriverDataset(Dataset):
         self.length = length
         self.transform = transform
 
+    def __len__(self):
+        return self.length
+
     def __getitem__(self, item):
-        img_path = self.driver_img_path + "G" + str(item) + ".jpg"
+        img_path = self.driver_img_path + "/G" + str(item + 1) + ".jpg"
         img = cv.imread(img_path)
         img = np.array(img)
 
         if self.transform:
             img = self.transform(img)
 
-        return img
+        return img.astype(np.float16)

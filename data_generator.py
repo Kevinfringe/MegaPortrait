@@ -4,7 +4,7 @@ from mtcnn.mtcnn import MTCNN
 import os
 
 
-acted_anger_source_path = "./videos_zakir_80/videos_zakir_80/AA1.mp4"
+acted_anger_source_path = "./videos_zakir_80/videos_zakir_80/AA5.mp4"
 genuine_anger_driver_path = "./videos_zakir_80/videos_zakir_80/GA1.mp4"
 source_imgs_path = "./source_img"
 driver_imgs_path = "./driver_img"
@@ -24,7 +24,7 @@ def face_detect(img):
 
 
 
-def capture_frames(path, flag, n=512):
+def capture_frames(path, flag, n=256):
     '''
 
     :param n:
@@ -74,5 +74,5 @@ def capture_frames(path, flag, n=512):
     cap.release()
 
 
-#capture_frames(acted_anger_source_path, flag=1)
+capture_frames(acted_anger_source_path, flag=1)
 capture_frames(genuine_anger_driver_path, flag=0)

@@ -30,6 +30,7 @@ cosine_dist = nn.CosineSimilarity()
 
 patch = (1, img_size // 2 ** 4, img_size // 2 ** 4)
 
+
 def cosine_distance(args, z1, z2):
 
     res = args.s_cos * (torch.sum(cosine_dist(z1[0], z2[0])) - args.m_cos)
@@ -65,8 +66,10 @@ def cosine_loss( args, descriptor_driver,
     return L_cos
 
 
+def train(args, models, device, driver_loader, source_loader, optimizers, schedulers, source_img_random, driver_img_random,
+          source_loader_origin, driver_loader_origin):
 
-def train(args, models, device, driver_loader, source_loader, optimizers, schedulers, source_img_random, driver_img_random):
+    # Instantiate each model.
     Eapp1 = models['Eapp1']
     Eapp2 = models['Eapp2']
     Emtn_facial = models['Emtn_facial']
@@ -79,7 +82,7 @@ def train(args, models, device, driver_loader, source_loader, optimizers, schedu
 
     train_loss = 0.0
 
-
+    # Training procedure starts here.
     for idx in range(args.iteration):
         # Ending condition for training.
         if idx > args.iteration:
@@ -90,8 +93,10 @@ def train(args, models, device, driver_loader, source_loader, optimizers, schedu
             idx += 1
 
         # loading a single data
-        source_img = next(source_loader).to(device)
-        driver_img = next(driver_loader).to(device)
+        source_img = next(iter(source_loader)).to(device)
+        driver_img = next(iter(driver_loader)).to(device)
+        source_imgs_origin = next(iter(source_loader_origin))
+        driver_imgs_origin = next(iter(driver_loader_origin))
 
         # pass the data through Eapp1 & 2.
         v_s = Eapp1(source_img)
@@ -99,12 +104,7 @@ def train(args, models, device, driver_loader, source_loader, optimizers, schedu
 
         # Emtn.
 
-        # First part of Emtn : Generate the transformation matrix
-        # based on the head pose estimation.
-        trans_mat_source = HeadPoseEstimation.head_pose_estimation(source_img)
-        trans_mat_driver = HeadPoseEstimation.head_pose_estimation(driver_img)
-
-        # Second part of Emtn : Generate facial expression letent vector z
+        # Second part of Emtn : Generate facial expression latent vector z
         # based on a ResNet-18 network
         z_s = Emtn_facial(source_img)
         z_d = Emtn_facial(driver_img)
@@ -113,8 +113,9 @@ def train(args, models, device, driver_loader, source_loader, optimizers, schedu
 
         # First part of Warp Generator: Generate warping matrix
         # based on its transformation matrix.
-        W_rt_s = np.linalg.inv(trans_mat_source)
-        W_rt_d = trans_mat_driver
+        # Note: the head pose prediction is also completed in this function.
+        W_rt_s = HeadPoseEstimation.head_pose_estimation(source_imgs_origin)
+        W_rt_d = HeadPoseEstimation.head_pose_estimation(driver_imgs_origin)
 
         # Second part of Warp Generator: Generate emotion warper.
         W_em_s = Warp_G(z_s + e_s)
@@ -260,6 +261,14 @@ def main():
 
     source_loader = DataLoader(source_set, batch_size=args.batch_size, shuffle=False)
     driver_loader = DataLoader(driver_set, batch_size=args.batch_size, shuffle=False)
+
+    # Original data to compute transformation matrix.
+    source_set_origin = dataset.SourceDataset(source_img_path, data_set_length, transform=None)
+    driver_set_origin = dataset.DriverDataset(driver_img_path, data_set_length, transform=None)
+
+    source_loader_origin = DataLoader(source_set_origin, batch_size=args.batch_size, shuffle=False)
+    driver_loader_origin = DataLoader(driver_set_origin, batch_size=args.batch_size, shuffle=False)
+
 
     # Generate random pairs for calculating cos loss.
     random.seed(0)

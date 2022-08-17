@@ -91,7 +91,7 @@ class Eapp1(nn.Module):
         self.resblock_128 = ResBlock_Custom(dimension=2, input_channels=64, output_channels=128)        # output 512*512*128
         self.resblock_256 = ResBlock_Custom(dimension=2, input_channels=128, output_channels=256)       # output 512*512*256
         self.resblock_512 = ResBlock_Custom(dimension=2, input_channels=256, output_channels=512)       # output 512*512*512
-        self.resblock3D_96 = ResBlock_Custom(dimension=3, input_channels=96, output_channels=96)      # output
+        self.resblock3D_96 = ResBlock_Custom(dimension=3, input_channels=96, output_channels=96)        # output
         self.resblock3D_96_2 = ResBlock_Custom(dimension=3, input_channels=96, output_channels=96)
         self.conv_1 = nn.Conv2d(in_channels=512, out_channels=1536, kernel_size=1, stride=1, padding=0)
 
@@ -123,17 +123,22 @@ class Eapp1(nn.Module):
         print("After conv_1:" + str(out.size()))
 
         # Reshape
-        out = out.view(96, 16, out.size(1), out.size(2))
+        out = out.view(out.size(0), 96, 16, out.size(2), out.size(3))
         print("After reshape:" + str(out.size()))
 
         # ResBlock 3D
         out = self.resblock3D_96(out)
         print("After resblock3D:" + str(out.size()))
         out = self.resblock3D_96_2(out)
+        print("After resblock3D_96_2:" + str(out.size()))
         out = self.resblock3D_96_2(out)
+        print("After resblock3D_96_2:" + str(out.size()))
         out = self.resblock3D_96_2(out)
+        print("After resblock3D_96_2:" + str(out.size()))
         out = self.resblock3D_96_2(out)
+        print("After resblock3D_96_2:" + str(out.size()))
         out = self.resblock3D_96_2(out)
+        print("After resblock3D_96_2:" + str(out.size()))
 
         return out
 
@@ -148,7 +153,7 @@ class Eapp2(nn.Module):
         This encoder uses ResNet-50 as backbone, and replace the residual block with the customized res-block.
         ref: https://towardsdev.com/implement-resnet-with-pytorch-a9fb40a77448
     '''
-    def __init__(self, in_channels, repeat, outputs=1000):
+    def __init__(self, repeat, in_channels=3, outputs=256):
         super().__init__()
         self.layer0 = nn.Sequential(
             nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3),
@@ -160,24 +165,24 @@ class Eapp2(nn.Module):
         filters = [64, 256, 512, 1024, 2048]
 
         self.layer1 = nn.Sequential()
-        self.layer1.add_module('conv2_1', ResBlock(dimension=2, input_channels=filters[0], output_channels=filters[1]))
+        self.layer1.add_module('conv2_1', ResBlock_Custom(dimension=2, input_channels=filters[0], output_channels=filters[1]))
         for i in range(1, repeat[0]):
-                self.layer1.add_module('conv2_%d'%(i+1,), ResBlock(dimension=2, input_channels=filters[1], output_channels=filters[1]))
+                self.layer1.add_module('conv2_%d'%(i+1,), ResBlock_Custom(dimension=2, input_channels=filters[1], output_channels=filters[1]))
 
         self.layer2 = nn.Sequential()
-        self.layer2.add_module('conv3_1', ResBlock(dimension=2, input_channels=filters[1], output_channels=filters[2]))
+        self.layer2.add_module('conv3_1', ResBlock_Custom(dimension=2, input_channels=filters[1], output_channels=filters[2]))
         for i in range(1, repeat[1]):
-                self.layer2.add_module('conv3_%d' % (i+1,), ResBlock(dimension=2, input_channels=filters[2], output_channels=filters[2]))
+                self.layer2.add_module('conv3_%d' % (i+1,), ResBlock_Custom(dimension=2, input_channels=filters[2], output_channels=filters[2]))
 
         self.layer3 = nn.Sequential()
-        self.layer3.add_module('conv4_1', ResBlock(dimension=2, input_channels=filters[2], output_channels=filters[3]))
+        self.layer3.add_module('conv4_1', ResBlock_Custom(dimension=2, input_channels=filters[2], output_channels=filters[3]))
         for i in range(1, repeat[2]):
-            self.layer3.add_module('conv2_%d' % (i+1,), ResBlock(dimension=2, input_channels=filters[3], output_channels=filters[3]))
+            self.layer3.add_module('conv2_%d' % (i+1,), ResBlock_Custom(dimension=2, input_channels=filters[3], output_channels=filters[3]))
 
         self.layer4 = nn.Sequential()
-        self.layer4.add_module('conv5_1', ResBlock(dimension=2, input_channels=filters[3], output_channels=filters[4]))
+        self.layer4.add_module('conv5_1', ResBlock_Custom(dimension=2, input_channels=filters[3], output_channels=filters[4]))
         for i in range(1, repeat[3]):
-            self.layer4.add_module('conv3_%d'%(i+1,), ResBlock(dimension=2, input_channels=filters[4], output_channels=filters[4]))
+            self.layer4.add_module('conv3_%d'%(i+1,), ResBlock_Custom(dimension=2, input_channels=filters[4], output_channels=filters[4]))
 
         self.gap = torch.nn.AdaptiveAvgPool2d(1)
         self.fc = torch.nn.Linear(filters[4], outputs)
@@ -192,13 +197,14 @@ class Eapp2(nn.Module):
         input = self.gap(input)
         input = torch.flatten(input, start_dim=1)
         input = self.fc(input)
+        print("Dimensions of final output of Eapp2: " + str(input.size()))
 
         return input
 
 
 
 class ResBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, downsample):
+    def __init__(self, in_channels, out_channels, downsample=False):
         super().__init__()
         if downsample:
             self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2, padding=1)
@@ -224,7 +230,7 @@ class ResBlock(nn.Module):
 
 
 class Emtn_facial(nn.Module):
-    def __init__(self, in_channels, resblock, outputs=1000):
+    def __init__(self, in_channels, resblock=ResBlock, outputs=256):
         super().__init__()
         self.layer0 = nn.Sequential(
             nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3),
@@ -263,15 +269,16 @@ class Emtn_facial(nn.Module):
         input = self.layer3(input)
         input = self.layer4(input)
         input = self.gap(input)
-        input = torch.flatten(input)
+        input = torch.flatten(input, 1)
         input = self.fc(input)
+        print("Dimensions of final output of Emtn_facial: " + str(input.size()))
 
         return input
 
 
 
 class Emtn_head(nn.Module):
-    def __init__(self, in_channels, resblock, outputs=1000):
+    def __init__(self, in_channels, resblock, outputs=256):
         super().__init__()
         self.layer0 = nn.Sequential(
             nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3),
@@ -349,9 +356,9 @@ class ResBlock3D_Adaptive(nn.Module):
 class WarpGenerator(nn.Module):
     def __init__(self, input_channels):
         super(WarpGenerator, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=input_channels, out_channels=2048, kernel_size=1, padding=0, stride=1)
+        self.conv1 = nn.Conv1d(in_channels=input_channels, out_channels=2048, kernel_size=1, padding=0, stride=1)
         self.hidden_layer = nn.Sequential(
-            ResBlock_Custom(dimension=3, input_channels=2048, output_channels=256),
+            ResBlock_Custom(dimension=3, input_channels=512, output_channels=256),
             nn.Upsample(scale_factor=(2, 2, 2)),
             ResBlock_Custom(dimension=3, input_channels=256, output_channels=128),
             nn.Upsample(scale_factor=(2, 2, 2)),
@@ -360,14 +367,23 @@ class WarpGenerator(nn.Module):
             ResBlock_Custom(dimension=3, input_channels=64, output_channels=32),
             nn.Upsample(scale_factor=(1, 2, 2)),
         )
-        self.conv3D = nn.Conv3d(in_channels=32, out_channels=3, kernel_size=3, padding=1,stride=1)
+        self.conv3D = nn.Conv3d(in_channels=32, out_channels=3, kernel_size=3, padding=1, stride=1)
 
     def forward(self, x):
         out = self.conv1(x)
+        print("The output shape after first conv layer is " + str(out.size()))
+        # reshape
+        out = out.view(out.size(0), 512, 4, 16, 16)
+        print("The output shape after reshaping is " + str(out.size()))
+
         out = self.hidden_layer(out)
+        print("The output shape after hidden_layer is " + str(out.size()))
         out = F.group_norm(out, num_groups=32)
+        print("The output shape after group_norm is " + str(out.size()))
         out = F.relu(out)
-        out = F.tanh(torch.flatten(out))
+        print("The output shape after relu is " + str(out.size()))
+        out = torch.tanh(out)
+        print("The final output shape is : " + str(out.size()))
 
         return out
 

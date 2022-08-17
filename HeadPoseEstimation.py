@@ -7,6 +7,8 @@ import mediapipe as mp
 import numpy as np
 import time
 
+import torch
+
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
@@ -143,68 +145,89 @@ drawing_spec = mp_drawing.DrawingSpec(thickness=1, circle_radius=1)
 #
 # cap.release()
 
-def head_pose_estimation(img):
-    image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    # To improve performance
-    image.flags.writeable = False
+def head_pose_estimation(imgs, source=True):
 
-    # Get the result
-    results = face_mesh.process(image)
+    # Initialize the return variable.
+    batch = imgs.size(0)
+    res = np.zeros((imgs.size(0), 3, 3))
+    print(res.shape)
 
-    # To improve performance
-    image.flags.writeable = True
+    # Convert tensor to np.array
+    imgs = imgs.numpy()
 
-    # Convert the color space from RGB to BGR
-    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    for i in range(batch):
+        img = imgs[i].astype(np.uint8)
+        print("img shape in head_pose is :" + str(img.shape))
+        print(img)
 
-    img_h, img_w, img_c = image.shape
-    face_3d = []
-    face_2d = []
+        image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    if results.multi_face_landmarks:
-        for face_landmarks in results.multi_face_landmarks:
-            for idx, lm in enumerate(face_landmarks.landmark):
-                if idx == 33 or idx == 263 or idx == 1 or idx == 61 or idx == 291 or idx == 199:
-                    if idx == 1:
-                        nose_2d = (lm.x * img_w, lm.y * img_h)
-                        nose_3d = (lm.x * img_w, lm.y * img_h, lm.z * 3000)
+        # To improve performance
+        image.flags.writeable = False
 
-                    x, y = int(lm.x * img_w), int(lm.y * img_h)
+        # Get the result
+        results = face_mesh.process(image)
 
-                    # Get the 2D Coordinates
-                    face_2d.append([x, y])
+        # To improve performance
+        image.flags.writeable = True
 
-                    # Get the 3D Coordinates
-                    face_3d.append([x, y, lm.z])
+        # Convert the color space from RGB to BGR
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-                    # Convert it to the NumPy array
-            face_2d = np.array(face_2d, dtype=np.float64)
+        img_h, img_w, img_c = image.shape
+        face_3d = []
+        face_2d = []
 
-            # Convert it to the NumPy array
-            face_3d = np.array(face_3d, dtype=np.float64)
+        if results.multi_face_landmarks:
+            for face_landmarks in results.multi_face_landmarks:
+                for idx, lm in enumerate(face_landmarks.landmark):
+                    if idx == 33 or idx == 263 or idx == 1 or idx == 61 or idx == 291 or idx == 199:
+                        if idx == 1:
+                            nose_2d = (lm.x * img_w, lm.y * img_h)
+                            nose_3d = (lm.x * img_w, lm.y * img_h, lm.z * 3000)
 
-            # The camera matrix
-            focal_length = 1 * img_w
+                        x, y = int(lm.x * img_w), int(lm.y * img_h)
 
-            cam_matrix = np.array([[focal_length, 0, img_h / 2],
-                                   [0, focal_length, img_w / 2],
-                                   [0, 0, 1]])
+                        # Get the 2D Coordinates
+                        face_2d.append([x, y])
 
-            # The distortion parameters
-            dist_matrix = np.zeros((4, 1), dtype=np.float64)
+                        # Get the 3D Coordinates
+                        face_3d.append([x, y, lm.z])
 
-            # Solve PnP
-            success, rot_vec, trans_vec = cv2.solvePnP(face_3d, face_2d, cam_matrix, dist_matrix)
+                        # Convert it to the NumPy array
+                face_2d = np.array(face_2d, dtype=np.float64)
 
-            # Get rotational matrix
-            rmat, jac = cv2.Rodrigues(rot_vec)
+                # Convert it to the NumPy array
+                face_3d = np.array(face_3d, dtype=np.float64)
 
-            # Generate the homography matrix H = I @ [R|t]
-            # where we only extract the first two columns of R
-            # in order to keep the output size of trans_mat (3,3)
-            # ref link: https://towardsdatascience.com/estimating-a-homography-matrix-522c70ec4b2c
-            R_t = np.concatenate((rmat[:, 0:2], trans_vec), axis=1)
-            trans_mat = cam_matrix.dot(R_t)
+                # The camera matrix
+                focal_length = 1 * img_w
 
-            return trans_mat
+                cam_matrix = np.array([[focal_length, 0, img_h / 2],
+                                       [0, focal_length, img_w / 2],
+                                       [0, 0, 1]])
+
+                # The distortion parameters
+                dist_matrix = np.zeros((4, 1), dtype=np.float64)
+
+                # Solve PnP
+                success, rot_vec, trans_vec = cv2.solvePnP(face_3d, face_2d, cam_matrix, dist_matrix)
+
+                # Get rotational matrix
+                rmat, jac = cv2.Rodrigues(rot_vec)
+
+                # Generate the homography matrix H = I @ [R|t]
+                # where we only extract the first two columns of R
+                # in order to keep the output size of trans_mat (3,3)
+                # ref link: https://towardsdatascience.com/estimating-a-homography-matrix-522c70ec4b2c
+                R_t = np.concatenate((rmat[:, 0:2], trans_vec), axis=1)
+                trans_mat = cam_matrix.dot(R_t)
+                print(trans_mat.shape)
+
+                if source:
+                    res[i] = np.linalg.inv(trans_mat).copy()
+                else:
+                    res[i] = trans_mat.copy()
+
+    return torch.Tensor(res)
